@@ -1,0 +1,28 @@
+---
+title: "NYT API"
+author: "Ciara Bonnett"
+date: "2026-03-25"
+format: html
+editor: visual
+---
+## Introduction
+For this assignment, I am using the NYT Books API specifically the `overview.json` endpoint. Unlike a single category list, I chose the overview because it provides a snapshot of all the Best Sellers lists for a given week. My goal is to find out which book is currently holding the top spot across all categories the longest ? Using the overview service, I can compare # 1 hits across all the genres on the list.
+
+## Approach
+I am using the modern `httr2` package to handle the API request. This allows for a piped workflow where I define the request, add my API key as a query parameter, and perform the request. Because the `overview` endpoint returns a nested list structure (lists within results), I use `resp_body_json()` and `tidyr::unnest()` to flatten the data into a usable data frame.
+
+## Challenges
+One challenge I anticipate is working with the nested JSON structure returned by the `overview.json` endpoint. The response includes multiple bestseller lists inside the `results` object, and each list contains its own set of books, so I will need to carefully flatten that structure into a tidy data frame. Another challenge is deciding the right unit of analysis for my question. Since I want to compare the current #1 books across all categories, I will need to isolate only the top-ranked book from each list and then compare those books based on how many weeks they have remained on the list. I also expect that some fields may be blank or inconsistent across categories, which may require light cleaning before analysis.
+```{r}
+library(httr2)
+```
+
+```{r}
+nyt_key <- Sys.getenv("NYT_API_KEY")
+```
+
+```{r}
+response <- request("https://api.nytimes.com/svc/books/v3/lists/overview.json") |> 
+  req_url_query(`api-key` = nyt_key) |>
+  req_perform()
+```
