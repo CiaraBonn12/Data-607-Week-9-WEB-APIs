@@ -1,0 +1,119 @@
+---
+title: "NYT API"
+author: "Ciara Bonnett"
+date: "2026-03-25"
+format: html
+editor: visual
+---
+
+## Introduction
+
+For this assignment, I am using the NYT Books API specifically the `overview.json` endpoint. Unlike a single category list, I chose the overview because it provides a snapshot of all the Best Sellers lists for a given week. My goal is to find out which book is currently holding the top spot across all categories the longest time. Using the overview service, I can compare # 1 books across all the genres on the list.
+
+## Approach
+
+I am using the modern `httr2` package to handle the API request. This allows for a piped workflow where I define the request, add my API key as a query parameter, and perform the request. Because the `overview` endpoint returns a nested list structure, I use `resp_body_json()` and functions from `purrr` to extract the top-ranked book from each bestseller list and combine the results into a tidy data frame. 
+
+## Challenges
+
+One challenge I anticipate is working with the nested JSON structure returned by the `overview.json` endpoint. The response includes multiple bestseller lists inside the `results` object, and each list contains its own set of books, so I will need to carefully flatten that structure into a tidy data frame. Another challenge is deciding the right unit of analysis for my question. Since I want to compare the current #1 books across all categories, I will need to isolate only the top-ranked book from each list and then compare those books based on how many weeks they have remained on the list. I also expect that some fields may be blank or inconsistent across categories, which may require light cleaning before analysis.
+
+## Load Packages
+```{r}
+library(httr2)
+library(dplyr)
+library(purrr)
+library(tibble)
+```
+
+```{r}
+nyt_key <- Sys.getenv("NYT_API_KEY")
+```
+```{r}
+if (nyt_key == "") {
+  stop("NYT_API_KEY was not found.")
+}
+```
+
+```{r}
+response <- request("https://api.nytimes.com/svc/books/v3/lists/overview.json") |> 
+  req_url_query(`api-key` = nyt_key) |>
+  req_perform()
+```
+
+```{r}
+books_raw <- response |>
+  resp_body_json(simplifyVector = FALSE)
+```
+## Inspect the Response 
+
+```{r}
+names(books_raw)
+names(books_raw$results)
+length(books_raw$results$lists)
+```
+
+```{r}
+names(books_raw$results$lists[[1]])
+names(books_raw$results$lists[[1]]$books[[1]])
+```
+## Build a Tidy Data Frame
+
+```{r}
+or_else <- function(x, y) {
+  if (is.null(x) || length(x) == 0) y else x } 
+```
+```{r}
+top_ranked_books <- map_dfr(books_raw$results$lists, function(one_list) {
+  top_book <- detect(
+    one_list$books,
+    function(book) as.integer(or_else(book$rank, NA_integer_)) == 1L
+)
+tibble(
+  published_date = as.Date(or_else(books_raw$results$published_date, NA_character_)),
+  bestsellers_date = as.Date(or_else(books_raw$results$bestsellers_date, NA_character_)),
+  list_name = or_else(one_list$list_name, NA_character_),
+  list_name_encoded = or_else(one_list$list_name_encoded, NA_character_),
+  updated = or_else(one_list$updated, NA_character_),
+  title = or_else(top_book$title, NA_character_),
+  author = or_else(top_book$author, NA_character_),
+  publisher = or_else(top_book$publisher, NA_character_),
+  description = or_else(top_book$description, NA_character_),
+  rank = as.integer(or_else(top_book$rank, NA_integer_)),
+  weeks_on_list = as.integer(or_else(top_book$weeks_on_list, NA_integer_)),
+  amazon_product_url = or_else(top_book$amazon_product_url, NA_character_)
+)  
+})
+```
+```{r}
+top_ranked_books
+```
+## Analyze the Results
+```{r}
+longest_running_top_books <- top_ranked_books |>
+  filter(rank == 1) |>
+  arrange(desc(weeks_on_list), list_name)
+
+longest_running_top_books
+```
+```{r}
+top_answer <- longest_running_top_books |>
+  filter(weeks_on_list == max(weeks_on_list, na.rm = TRUE))
+
+top_answer
+```
+The `top_answer` table shows the current #1 book, or books if there is a tie, that have remained on their bestseller list the longest across all NYT categories in the current overview response.
+
+## Data-Cleaning Notes
+In order to create a tidy data frame, I extracted the nested `lists` object from the API response and then isolated the book with `rank == 1` from each list. I kept one row per bestseller category and selected only the fields needed for the analysis, such as title, author, publisher, rank, and weeks on list. I also converted date fields to `Date` and numeric ranking fields to integers so they could be sorted and compared correctly.
+
+## Conclusions
+This analysis compares the current #1 book in each NYT bestseller category and identifies which one has been on its list the longest. A useful next step would be to collect overview data across multiple weeks to study how category leaders change over time.
+
+## AI Transcript
+
+I used ChatGPT as a learning tool while working on this assignment. Instead of using it to complete the assignment for me, I used it to help me understand the NYT developer site, the difference between the Books API endpoints, and how to safely store and use an API key in R.
+
+It was especially helpful as a teaching resource when I was trying to understand the structure of the `overview.json` response. Because the response is nested, I needed to learn how the lists and books were organized before I could create a tidy data frame. ChatGPT helped me think through that structure step by step and helped me understand how to isolate the top-ranked book from each category.
+
+I also used ChatGPT to better understand how to organize my Quarto document so that it met the assignment requirements. Overall, it was most useful as a learning and troubleshooting tool that supported my understanding of APIs, JSON parsing, and data cleaning in R.
